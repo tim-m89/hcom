@@ -45,6 +45,7 @@ cabal-version:       >=1.8
 library
   -- Modules exported by the library.
   exposed-modules:  Foreign.COM,
+                    Foreign.COM.COM,
                     Foreign.COM.Variant,
                     Foreign.COM.BStr,
                     Foreign.COM.SafeArray 

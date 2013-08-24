@@ -1,3 +1,4 @@
+-- |Central module re-exporting all of hcom modules
 module Foreign.COM (
   module Foreign.COM.COM,
   module Foreign.COM.BStr,

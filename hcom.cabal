@@ -13,7 +13,7 @@ name:                hcom
 version:             0.1.0.0
 
 -- A short (one-line) description of the package.
-synopsis:            Haskell COM library
+synopsis:            Haskell library to Microsoft's component object model
 
 -- A longer description of the package.
 -- description:         

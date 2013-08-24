@@ -1,23 +1,58 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE ForeignFunctionInterface, GeneralizedNewtypeDeriving #-}
 
-module Foreign.COM.BStr where
+module Foreign.COM.BStr (
+
+  BStrPtr(..),
+  BStr(..),
+  createBStr,
+  freeBStr,
+  withBStr,
+  sizeBytesBStr,
+  lengthBStr,
+  stringFromBStr
+
+) where
 
 import Control.Exception (bracket)
 import Foreign.Ptr
 import Foreign.C.String
 import Data.Word
+import Foreign.Storable
 
-type BStr = Ptr ()
+type BStrPtr = Ptr ()
+newtype BStr = BStr BStrPtr deriving (Eq, Ord, Storable)
 
-foreign import stdcall "oleauto.h SysAllocStringLen" prim_SysAllocStringLen :: CWString -> Word32 -> IO BStr
-foreign import stdcall "oleauto.h SysFreeString"     prim_SysFreeString :: BStr -> IO ()
+foreign import stdcall "oleauto.h SysAllocStringLen" prim_SysAllocStringLen :: CWString -> Word32 -> IO BStrPtr
+foreign import stdcall "oleauto.h SysFreeString"     prim_SysFreeString :: BStrPtr -> IO ()
+foreign import stdcall "oleauto.h SysStringLen"      prim_SysStringLen :: BStrPtr -> IO Word32
 
-sysAllocString :: String -> IO BStr
-sysAllocString s = withCWStringLen s $ \(a,b)-> prim_SysAllocStringLen a $ fromIntegral b
+-- |Create a new @BStr@ from a @String@. The returned BStr must be freed using 'freeBStr'
+createBStr :: String -> IO BStr
+createBStr s = do
+  p <- withCWStringLen s $ \(a,b)-> prim_SysAllocStringLen a $ fromIntegral b
+  return $ BStr p
 
-sysFreeString :: BStr -> IO ()
-sysFreeString = prim_SysFreeString
+-- |Free a previously created BStr
+freeBStr :: BStr -> IO ()
+freeBStr (BStr p) = prim_SysFreeString p
 
+-- |Bracket the allocation & freeing of a BStr
 withBStr :: String -> (BStr -> IO a) -> IO a
-withBStr s = bracket (sysAllocString s) (sysFreeString)
+withBStr s = bracket (createBStr s) freeBStr
 
+-- |Size in bytes of a BStr
+sizeBytesBStr :: BStr -> IO Int
+sizeBytesBStr (BStr p) = peek $ castPtr p
+
+-- |Length in characters of a BStr
+lengthBStr :: BStr -> IO Int
+lengthBStr (BStr p) = prim_SysStringLen p >>= return . fromIntegral
+
+-- |Get the Haskell String from a BStr
+stringFromBStr :: BStr -> IO String
+stringFromBStr b@(BStr p) = do
+  l <- lengthBStr b
+  let p2 = plusPtr p 4
+  peekCWStringLen (p2, l)
+  
+  

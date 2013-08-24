@@ -9,7 +9,7 @@ module Foreign.COM.COM (
   comObjectAuto,
   withComObjectAuto,
   getComFunc,
-  ComObjectFunction,
+  ComObjectFunction(..),
   loadTypeLibEx,
   loadRegTypeLib,
   coInitializeEx,
@@ -22,7 +22,15 @@ module Foreign.COM.COM (
   LIBID,
   REFLIBID,
   CATID,
-  REFCATID
+  REFCATID,
+
+  QueryInterface,
+  iUnknown_queryInterface,
+  AddRef,
+  iUnknown_addRef,
+  Release,
+  iUnknown_release
+  
 
 ) where
 
@@ -93,24 +101,31 @@ type ComObjectInternal = Ptr (FunPtr ())
 
 type ComObject = Ptr ComObjectInternal
 
--- | The type @ComObjectAuto@ Is the ForeignPtr equivelant of @ComObject@
--- See @comObjectAuto@
+-- | The type @ComObjectAuto@ Is the ForeignPtr equivelant of 'ComObject'
+-- See 'comObjectAuto'
 type ComObjectAuto = ForeignPtr ComObjectInternal
 
 type QueryInterface = ComObject -> REFIID -> Ptr ComObject -> IO HRESULT
 foreign import stdcall "dynamic" makeQueryInterface :: FunPtr QueryInterface -> QueryInterface
+-- |IUnknown::QueryInterface to be passed as an argument to 'comObjectFunc'
+iUnknown_queryInterface :: (Int, FunPtr QueryInterface -> QueryInterface)
 iUnknown_queryInterface = (0::Int, makeQueryInterface)
+
 
 type AddRef = ComObject -> IO LONG
 foreign import stdcall "dynamic" makeAddRef :: FunPtr AddRef -> AddRef
+-- |IUnknown::AddRef to be passed as an argument to 'comObjectFunc'
+iUnknown_addRef :: (Int, FunPtr AddRef -> AddRef)
 iUnknown_addRef = (1::Int, makeAddRef)
 
 type Release = ComObject -> IO LONG
 foreign import stdcall "dynamic" makeRelease :: FunPtr Release -> Release
+-- |IUnknown::Release to be passed as an argument to 'comObjectFunc'
 iUnknown_release :: (Int, FunPtr Release -> Release)
 iUnknown_release = (2::Int, makeRelease)
 
 foreign import ccall "hcom.c &unknown_release" iunknown_release :: FunPtr (ComObject -> IO ())
+
 -- | The function @comObjectAuto@ turns a normal ComObject into one with an assoicated finalizer that will automatically call IUnknown::Release upon
 -- loosing the last reference to it
 comObjectAuto :: ComObject -> IO ComObjectAuto
@@ -122,7 +137,7 @@ withComObjectAuto :: ComObjectAuto -> (ComObject -> IO a) -> IO a
 withComObjectAuto = withForeignPtr
 
 
--- | Get a function from a ComObject specifying a tuple of the index and maker function. For example:
+-- | Get a function from a ComObject specifying a tuple of (function index, maker function). For example:
 --
 -- >func <- obj `getComFunc` myFunc
 -- >hres <- func obj 2
@@ -138,9 +153,9 @@ getComFunc this (index, makeFun) = do
     funPtr <- peek this >>= flip peekElemOff index
     return $ makeFun $ castFunPtr funPtr
 
--- | Like @getComFunc@ but applies the 'this' parameter for you so the above example becomes:
+-- | @comObjectFunc@ is like 'getComFunc' but applies the \'this\' parameter for you so the above example becomes:
 --
--- >func < obj `comObjectFunc` myFunc
+-- >func <- obj `comObjectFunc` myFunc
 -- >hres <- func 2
 class ComObjectFunction a where
   comObjectFunc :: a -> (Int, FunPtr b -> ComObject -> c) -> IO c

@@ -7,29 +7,38 @@ module Foreign.COM.SafeArray (
   safeArrayCreateVector,
   safeArrayLength,
   safeArraySetData,
+  safeArraySetFromPtr,
+  ptrToSafeArray,
   arrayToSafeArray,
   safeArrayToArray,
+  safeArrayDestroy,
   withSafeArray,
+  createEmptySafeArray,
 
   -- * Explicit VarType
   -- $vT
 
   withSafeArrayVT,
   arrayToSafeArrayVT,
-  safeArrayCreateVectorVT
+  ptrToSafeArrayVT,
+  safeArrayCreateVectorVT,
+  createEmptySafeArrayVT
 
 ) where
 
 import Control.Exception (bracket)
+import Control.Monad (void)
 import Data.Int
 import Data.Word
 import Foreign.COM.Variant
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
+import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Storable
 import Foreign.ForeignPtr
 import System.Win32
+import Numeric (showHex)
 
 type SafeArrayPtr a = Ptr a
 
@@ -68,9 +77,20 @@ safeArraySetData (SafeArray sap) x = alloca $ \p-> do
   prim_SafeArrayUnaccessData sap
   return ()
 
+safeArraySetFromPtr :: (Storable a) => SafeArray a -> Ptr a -> Int -> IO ()
+safeArraySetFromPtr (SafeArray sap) pSource count = alloca $ \pTemp-> do
+  checkHR "safeArraySetFromPtr accessData" $ prim_SafeArrayAccessData sap pTemp
+  pDest <- peek pTemp
+  copyBytes pDest pSource count
+  checkHR "safeArraySetFromPtr unaccessdata" $ prim_SafeArrayUnaccessData sap
+  return ()
+
+ptrToSafeArray :: forall a. (Storable a, HVarType a) => Ptr a -> Int -> IO (SafeArray a)
+ptrToSafeArray p c = let vt = hVarType (undefined::a) in ptrToSafeArrayVT vt p c
 
 arrayToSafeArray :: forall a. (Storable a, HVarType a) => [a] -> IO (SafeArray a)
 arrayToSafeArray x = let vt = hVarType (undefined::a) in arrayToSafeArrayVT vt x 
+
 
 safeArrayToArray :: (Storable a) => SafeArray a -> IO [a]
 safeArrayToArray sa@(SafeArray sap) = alloca $ \p-> do
@@ -81,8 +101,14 @@ safeArrayToArray sa@(SafeArray sap) = alloca $ \p-> do
   prim_SafeArrayUnaccessData sap
   return x
 
+safeArrayDestroy :: SafeArray a -> IO ()
+safeArrayDestroy (SafeArray p) = void $ prim_SafeArrayDestroy p
+
 withSafeArray :: forall a b. (Storable a, HVarType a) => [a] -> (SafeArray a -> IO b) -> IO b
 withSafeArray x f = let vt = hVarType (undefined::a) in withSafeArrayVT vt x f
+
+createEmptySafeArray :: IO (SafeArray ())
+createEmptySafeArray = createEmptySafeArrayVT vt_EMPTY
 
 
 {- $vT
@@ -100,8 +126,33 @@ arrayToSafeArrayVT vt x = do
   safeArraySetData sa x
   return sa
 
+ptrToSafeArrayVT :: (Storable a) => VarType -> Ptr a -> Int -> IO (SafeArray a)
+ptrToSafeArrayVT vt p c = do
+  sa <- safeArrayCreateVectorVT vt c
+  safeArraySetFromPtr sa p c
+  return sa
+
 safeArrayCreateVectorVT :: VarType -> Int -> IO (SafeArray a)
 safeArrayCreateVectorVT vt z = do
   sap <- prim_SafeArrayCreateVector vt 0 (fromIntegral z)
   return $ SafeArray sap
+
+createEmptySafeArrayVT :: VarType -> IO (SafeArray ())
+createEmptySafeArrayVT vt = safeArrayCreateVectorVT vt 0
+
+
+hS_OK :: HRESULT
+hS_OK = 0x00000000
+
+checkHR :: String -> IO HRESULT -> IO ()
+checkHR s ihr = do
+  hr <- ihr
+  if hr == hS_OK then return () else do
+    putStr $ s ++ "  "
+    error $ "HRESULT value == " ++ (hex $ fromIntegral hr)
+
+
+hex :: Word32 -> String
+hex n = "0x" ++ showHex n ""
+
 

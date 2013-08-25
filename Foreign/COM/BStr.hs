@@ -19,7 +19,7 @@ import Foreign.C.String
 import Data.Word
 import Foreign.Storable
 
-type BStrPtr = Ptr ()
+type BStrPtr = CWString
 newtype BStr = BStr BStrPtr deriving (Eq, Ord, Storable)
 
 foreign import stdcall "oleauto.h SysAllocStringLen" prim_SysAllocStringLen :: CWString -> Word32 -> IO BStrPtr
@@ -42,7 +42,7 @@ withBStr s = bracket (createBStr s) freeBStr
 
 -- |Size in bytes of a BStr
 sizeBytesBStr :: BStr -> IO Int
-sizeBytesBStr (BStr p) = peek $ castPtr p
+sizeBytesBStr (BStr p) = peek $ plusPtr p (-4)
 
 -- |Length in characters of a BStr
 lengthBStr :: BStr -> IO Int
@@ -52,7 +52,6 @@ lengthBStr (BStr p) = prim_SysStringLen p >>= return . fromIntegral
 stringFromBStr :: BStr -> IO String
 stringFromBStr b@(BStr p) = do
   l <- lengthBStr b
-  let p2 = plusPtr p 4
-  peekCWStringLen (p2, l)
+  peekCWStringLen (p, l)
   
   
